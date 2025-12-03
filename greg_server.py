@@ -109,7 +109,7 @@ def match_volunteers():
                 }), 404
 
         # Passiamo category (anche se None) al motore
-        results = greg_recommend(lat, lon, category, subcategory, top_k=5)
+        results = greg_recommend(lat, lon, category, subcategory, top_k=50)
 
         if not results or not isinstance(results, list):
             return jsonify({'volunteerEmails': []}), 200

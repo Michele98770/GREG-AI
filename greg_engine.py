@@ -86,7 +86,7 @@ def normalize_series(series):
 def greg_recommend(user_lat, user_lon, target_category=None, target_subcategory=None, top_k=5):
     """
     Motore di raccomandazione GREG v2.1
-    Supporta category=None per ricerca pure location-based.
+    Restituisce di default 20 risultati invece di 5.
     """
     global df
     if df.empty: load_data()
@@ -108,17 +108,15 @@ def greg_recommend(user_lat, user_lon, target_category=None, target_subcategory=
         if 'category_desc' in candidates.columns:
             candidates = candidates[candidates['category_desc'] == target_category].copy()
 
-    # Se dopo il filtro (o senza filtro) non c'è nessuno, prova fallback globale
+    # Se dopo il filtro non c'è nessuno, prova fallback globale
     if len(candidates) == 0:
         if is_category_valid:
-            # Prova a cercare ovunque per quella categoria
             candidates = df[df['category_desc'] == target_category].copy()
         else:
-            # Se non c'era categoria e cluster vuoto, prendi tutto il dataset
             candidates = df.copy()
 
         if len(candidates) == 0:
-            return []  # Nessun risultato
+            return []
 
     # --- CALCOLO PUNTEGGI (Ranking Phase) ---
 
@@ -128,7 +126,7 @@ def greg_recommend(user_lat, user_lon, target_category=None, target_subcategory=
     )
     dist_score = 1 - normalize_series(candidates['distance_km'])
 
-    # B. Punteggio Subcategory (solo se ha senso)
+    # B. Punteggio Subcategory
     use_subcat = target_subcategory and str(target_subcategory).strip() != "" and str(
         target_subcategory).lower() != "null"
 
@@ -142,14 +140,10 @@ def greg_recommend(user_lat, user_lon, target_category=None, target_subcategory=
                 (normalize_series(candidates['vol_requests']) * WEIGHT_POPULARITY)
         )
     else:
-        # Logica dinamica per i pesi
         if not is_category_valid:
-            # CASO: Solo Posizione (No Categoria)
-            # La vicinanza diventa predominante
             ADJUSTED_WEIGHT_DISTANCE = 0.90
             ADJUSTED_WEIGHT_POPULARITY = 0.10
         else:
-            # CASO: Categoria presente ma no Sottocategoria
             ADJUSTED_WEIGHT_DISTANCE = WEIGHT_DISTANCE + (WEIGHT_SUBCAT * 0.8)
             ADJUSTED_WEIGHT_POPULARITY = WEIGHT_POPULARITY + (WEIGHT_SUBCAT * 0.2)
 
@@ -158,10 +152,9 @@ def greg_recommend(user_lat, user_lon, target_category=None, target_subcategory=
                 (normalize_series(candidates['vol_requests']) * ADJUSTED_WEIGHT_POPULARITY)
         )
 
-    # Ordina e restituisci
+    # Ordina e prendi i primi top_k (Default 20)
     results = candidates.sort_values('GREG_SCORE', ascending=False).head(top_k)
 
-    # Converti in lista di dizionari per JSON
     output = []
     for _, row in results.iterrows():
         output.append({
@@ -173,3 +166,34 @@ def greg_recommend(user_lat, user_lon, target_category=None, target_subcategory=
         })
 
     return output
+
+
+# --- MAIN DI TEST (PER PROVARE SUBITO) ---
+if __name__ == "__main__":
+    print("\n--- AVVIO TEST DIRETTO GREG ENGINE ---")
+
+    # Dati di test (Simuliamo un utente a Manhattan che cerca aiuto per la comunità)
+    TEST_LAT = 40.75  # Manhattan
+    TEST_LON = -73.98
+    TEST_CAT = "Strengthening Communities"
+
+    print(f"Utente Test: Lat={TEST_LAT}, Lon={TEST_LON}, Cat={TEST_CAT}")
+    print("Richiesta raccomandazione (Default 20 risultati)...")
+
+    # Chiamata senza specificare top_k per verificare il default a 20
+    risultati = greg_recommend(TEST_LAT, TEST_LON, target_category=TEST_CAT)
+
+    print(f"\nRisultati trovati: {len(risultati)}")
+
+    print(f"{'EMAIL':<40} | {'DIST (Km)':<10} | {'GREG SCORE':<5} | {'CAT'}")
+    print("-" * 80)
+
+    for r in risultati:
+        print(f"{r['email']:<40} | {r['distance_km']:<10} | {r['score']:<5} | {r['category']}")
+
+    if len(risultati) == 20:
+        print("\n[SUCCESS] Il sistema restituisce correttamente 20 volontari.")
+    else:
+        print(
+            f"\n[WARNING] Il sistema ha restituito {len(risultati)} volontari (forse ce ne sono meno di 20 nel dataset per questa categoria?).")
+
